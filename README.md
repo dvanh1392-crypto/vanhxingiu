@@ -43,3 +43,16 @@ Thay USERNAME/REPO bằng repo của bạn. Nếu repo đã tồn tại, không 
 ## V3 — chọn số người chơi
 
 Chủ phòng chọn 2, 3 hoặc 4 người khi tạo phòng; cũng có thể đổi trong phòng chờ (không thấp hơn số người đã vào). Chỉ bắt đầu khi phòng đủ số người đã chọn và **tất cả đều sẵn sàng**. Người thứ N+1 không thể vào khi phòng đầy.
+
+
+## V4 – Vietnamese / Simplified Chinese
+- Switch language with the selector in the header. Each player may independently choose Vietnamese or Simplified Chinese.
+- Language selection is saved in the browser. No server configuration change is required.
+- UI, lobby, scores, results, room notices and server error messages are localized.
+
+
+## V5 – song ngữ và luật chơi
+- Nút **📖 Luật chơi / 游戏规则** trên đầu trang, dùng được trước và trong trận.
+- Cửa sổ luật chơi đầy đủ 7 bước bằng tiếng Việt và tiếng Trung giản thể.
+- Đổi ngôn ngữ ngay trong phòng hoặc khi đang mở luật chơi, không làm gián đoạn trận.
+- Giữ nguyên giao thức server.js và cách deploy Render.
