@@ -39,3 +39,7 @@ Thay USERNAME/REPO bằng repo của bạn. Nếu repo đã tồn tại, không 
 - Người chơi rớt mạng có thể vào lại bằng cùng trình duyệt nhờ token lưu cục bộ.
 - Dữ liệu phòng nằm trong RAM. Render restart/sleep sẽ làm mất phòng đang chơi. Dùng Redis/database nếu cần lưu bền vững hoặc triển khai nhiều instance.
 - Game không có tiền cược hoặc giao dịch.
+
+## V3 — chọn số người chơi
+
+Chủ phòng chọn 2, 3 hoặc 4 người khi tạo phòng; cũng có thể đổi trong phòng chờ (không thấp hơn số người đã vào). Chỉ bắt đầu khi phòng đủ số người đã chọn và **tất cả đều sẵn sàng**. Người thứ N+1 không thể vào khi phòng đầy.

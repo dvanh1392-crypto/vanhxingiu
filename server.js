@@ -14,7 +14,7 @@ const code = () => crypto.randomBytes(4).toString('hex').slice(0,6).toUpperCase(
 const cleanName = v => String(v || '').trim().slice(0,20) || 'Người chơi';
 const validToken = v => typeof v === 'string' && /^[a-f0-9]{32}$/.test(v);
 function publicState(r) {
- return { code:r.code, status:r.status, host:r.host, count:r.count, next:r.next, startedAt:r.startedAt, endedAt:r.endedAt,
+ return { code:r.code, status:r.status, host:r.host, count:r.count, maxPlayers:r.maxPlayers, next:r.next, startedAt:r.startedAt, endedAt:r.endedAt,
  players:r.players.map(p=>({id:p.id,name:p.name,color:p.color,score:p.score,ready:!!p.ready,connected:!!p.socketId})),
  layout:r.layout, claimed:r.claimed };
 }
@@ -48,7 +48,7 @@ function join(socket,r,name,token,ack){
  let p=r.players.find(p=>p.token===token);
  if(!p){
   if(r.status!=='lobby')return ackError(ack,'Trận đã bắt đầu. Không thể vào thêm.');
-  if(r.players.length>=4)return ackError(ack,'Phòng đã đủ 4 người.');
+  if(r.players.length>=r.maxPlayers)return ackError(ack,'Phòng đã đủ '+r.maxPlayers+' người.');
   p={id:crypto.randomUUID(),token:crypto.randomBytes(16).toString('hex'),name:cleanName(name),color:COLORS[r.players.length],score:0,ready:false,socketId:null};r.players.push(p);r.players.forEach(x=>x.ready=false);
  }
  if(p.socketId && p.socketId!==socket.id){const old=io.sockets.sockets.get(p.socketId);if(old){old.leave(r.code);old.data.code=null;old.data.playerId=null;old.emit('replaced');}}
@@ -59,7 +59,7 @@ function join(socket,r,name,token,ack){
 io.on('connection',socket=>{
  socket.on('create',(data={},ack=()=>{})=>{
   leaveSocket(socket);let c;do{c=code()}while(rooms.has(c));
-  const r={code:c,status:'lobby',host:null,count:[100,200,300].includes(Number(data.count))?Number(data.count):100,players:[],next:1,layout:[],claimed:[],startedAt:null,endedAt:null};rooms.set(c,r);
+  const r={code:c,status:'lobby',host:null,count:[100,200,300].includes(Number(data.count))?Number(data.count):100,maxPlayers:[2,3,4].includes(Number(data.maxPlayers))?Number(data.maxPlayers):2,players:[],next:1,layout:[],claimed:[],startedAt:null,endedAt:null};rooms.set(c,r);
   join(socket,r,data.name,null,(result)=>{if(result.ok)r.host=result.id;ack(result);send(r);});
  });
  socket.on('join',(data={},ack=()=>{})=>{
@@ -71,7 +71,9 @@ io.on('connection',socket=>{
   const r=rooms.get(socket.data.code);
   if(!r||r.host!==socket.data.playerId||r.status!=='lobby')return ackError(ack,'Chỉ chủ phòng được đổi độ khó trước trận.');
   if(![100,200,300].includes(Number(data.count)))return ackError(ack,'Mức độ không hợp lệ.');
-  r.count=Number(data.count);r.players.forEach(p=>p.ready=false);send(r);ack({ok:true});
+  if(![2,3,4].includes(Number(data.maxPlayers)))return ackError(ack,'Số người không hợp lệ.');
+  if(Number(data.maxPlayers)<r.players.length)return ackError(ack,'Số người đã tham gia vượt quá giới hạn mới.');
+  r.maxPlayers=Number(data.maxPlayers);r.count=Number(data.count);r.players.forEach(p=>p.ready=false);send(r);ack({ok:true});
  });
  socket.on('ready',(data={},ack=()=>{})=>{
   const r=rooms.get(socket.data.code),p=r?.players.find(x=>x.id===socket.data.playerId);
@@ -82,7 +84,7 @@ io.on('connection',socket=>{
   const r=rooms.get(socket.data.code);
   if(!r||r.host!==socket.data.playerId)return ackError(ack,'Chỉ chủ phòng được bắt đầu.');
   if(r.status==='finished'){r.status='lobby';r.players=r.players.filter(p=>p.socketId);r.players.forEach(p=>p.ready=false);send(r);ack({ok:true});return;}
-  if(r.players.length<2)return ackError(ack,'Cần ít nhất 2 người.');
+  if(r.players.length!==r.maxPlayers)return ackError(ack,'Cần đủ '+r.maxPlayers+' người mới được bắt đầu.');
   if(!r.players.every(p=>p.ready&&p.socketId))return ackError(ack,'Tất cả người chơi phải online và bấm Sẵn sàng.');
   if(r.status==='playing')return ackError(ack,'Trận đang diễn ra.');
   r.players.forEach(p=>p.score=0);r.layout=layout(r.count);r.claimed=[];r.next=1;r.status='playing';r.startedAt=Date.now()+3000;r.endedAt=null;send(r);ack({ok:true});
