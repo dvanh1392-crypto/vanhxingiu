@@ -15,7 +15,7 @@ const cleanName = v => String(v || '').trim().slice(0,20) || 'Người chơi';
 const validToken = v => typeof v === 'string' && /^[a-f0-9]{32}$/.test(v);
 function publicState(r) {
  return { code:r.code, status:r.status, host:r.host, count:r.count, next:r.next, startedAt:r.startedAt, endedAt:r.endedAt,
- players:r.players.map(p=>({id:p.id,name:p.name,color:p.color,score:p.score,connected:!!p.socketId})),
+ players:r.players.map(p=>({id:p.id,name:p.name,color:p.color,score:p.score,ready:!!p.ready,connected:!!p.socketId})),
  layout:r.layout, claimed:r.claimed };
 }
 function send(r){io.to(r.code).emit('state',publicState(r));}
@@ -32,14 +32,15 @@ function layout(count){
    a:crypto.randomInt(-180,181),size:crypto.randomInt(86,117)};
  });
 }
+function announce(r,message){io.to(r.code).emit('roomNotice',message);}
 function leaveSocket(socket){
  const code=socket.data.code, id=socket.data.playerId;
  if(!code)return;
  const r=rooms.get(code);socket.leave(code);socket.data.code=null;socket.data.playerId=null;
  if(!r)return;
  const p=r.players.find(p=>p.id===id);
- if(p && p.socketId===socket.id) p.socketId=null;
- if(r.status==='lobby' && p){r.players=r.players.filter(x=>x.id!==id);if(r.host===id)r.host=r.players[0]?.id||null;}
+ if(p && p.socketId===socket.id){p.socketId=null;announce(r,p.name+' đã rời phòng.');if(r.host===id)r.host=r.players.find(x=>x.id!==id&&x.socketId)?.id||null;}
+ if(r.status==='lobby' && p){r.players=r.players.filter(x=>x.id!==id);if(r.host===id)r.host=r.players[0]?.id||null;r.players.forEach(x=>x.ready=false);}
  if(!r.players.length){rooms.delete(code);return;}send(r);
 }
 function ackError(ack,msg){if(typeof ack==='function')ack({ok:false,error:msg});}
@@ -48,7 +49,7 @@ function join(socket,r,name,token,ack){
  if(!p){
   if(r.status!=='lobby')return ackError(ack,'Trận đã bắt đầu. Không thể vào thêm.');
   if(r.players.length>=4)return ackError(ack,'Phòng đã đủ 4 người.');
-  p={id:crypto.randomUUID(),token:crypto.randomBytes(16).toString('hex'),name:cleanName(name),color:COLORS[r.players.length],score:0,socketId:null};r.players.push(p);
+  p={id:crypto.randomUUID(),token:crypto.randomBytes(16).toString('hex'),name:cleanName(name),color:COLORS[r.players.length],score:0,ready:false,socketId:null};r.players.push(p);r.players.forEach(x=>x.ready=false);
  }
  if(p.socketId && p.socketId!==socket.id){const old=io.sockets.sockets.get(p.socketId);if(old){old.leave(r.code);old.data.code=null;old.data.playerId=null;old.emit('replaced');}}
  p.socketId=socket.id;
@@ -70,12 +71,19 @@ io.on('connection',socket=>{
   const r=rooms.get(socket.data.code);
   if(!r||r.host!==socket.data.playerId||r.status!=='lobby')return ackError(ack,'Chỉ chủ phòng được đổi độ khó trước trận.');
   if(![100,200,300].includes(Number(data.count)))return ackError(ack,'Mức độ không hợp lệ.');
-  r.count=Number(data.count);send(r);ack({ok:true});
+  r.count=Number(data.count);r.players.forEach(p=>p.ready=false);send(r);ack({ok:true});
+ });
+ socket.on('ready',(data={},ack=()=>{})=>{
+  const r=rooms.get(socket.data.code),p=r?.players.find(x=>x.id===socket.data.playerId);
+  if(!r||!p||p.socketId!==socket.id||r.status!=='lobby')return ackError(ack,'Không thể thay đổi trạng thái lúc này.');
+  p.ready=!!data.ready;send(r);ack({ok:true});
  });
  socket.on('start',(_,ack=()=>{})=>{
   const r=rooms.get(socket.data.code);
   if(!r||r.host!==socket.data.playerId)return ackError(ack,'Chỉ chủ phòng được bắt đầu.');
+  if(r.status==='finished'){r.status='lobby';r.players=r.players.filter(p=>p.socketId);r.players.forEach(p=>p.ready=false);send(r);ack({ok:true});return;}
   if(r.players.length<2)return ackError(ack,'Cần ít nhất 2 người.');
+  if(!r.players.every(p=>p.ready&&p.socketId))return ackError(ack,'Tất cả người chơi phải online và bấm Sẵn sàng.');
   if(r.status==='playing')return ackError(ack,'Trận đang diễn ra.');
   r.players.forEach(p=>p.score=0);r.layout=layout(r.count);r.claimed=[];r.next=1;r.status='playing';r.startedAt=Date.now()+3000;r.endedAt=null;send(r);ack({ok:true});
  });
@@ -91,7 +99,7 @@ io.on('connection',socket=>{
  socket.on('leave',(_,ack=()=>{})=>{leaveSocket(socket);ack({ok:true});});
  socket.on('disconnect',()=>{
   const r=rooms.get(socket.data.code);const p=r?.players.find(x=>x.id===socket.data.playerId);
-  if(p&&p.socketId===socket.id){p.socketId=null;if(r.status==='lobby'){r.players=r.players.filter(x=>x.id!==p.id);if(r.host===p.id)r.host=r.players[0]?.id||null;}
+  if(p&&p.socketId===socket.id){p.socketId=null;announce(r,p.name+' đã mất kết nối / rời phòng.');if(r.host===p.id)r.host=r.players.find(x=>x.id!==p.id&&x.socketId)?.id||null;if(r.status==='lobby'){r.players=r.players.filter(x=>x.id!==p.id);if(r.host===p.id)r.host=r.players[0]?.id||null;r.players.forEach(x=>x.ready=false);}
    if(!r.players.length)rooms.delete(r.code);else send(r);
   }
  });
